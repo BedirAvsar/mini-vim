@@ -1,18 +1,20 @@
-# Mini-Vim (Kilo-style Text Editor)
+# Mini-Vim
 
-A terminal-based text editor written in pure C without using ncurses.
-This project focuses on low-level terminal handling, raw mode input,
-ANSI escape sequences, and manual memory management.
+A minimal, terminal-based text editor written in C.
 
-## Goals
-- Understand how terminal input works at a low level
-- Learn pointer-heavy text manipulation
-- Gain confidence with C and Linux/macOS internals
+## Project Objective
+This project is a technical study in systems programming. The goal is to build a functional text editor from scratch without relying on high-level UI libraries like `ncurses`. It interacts directly with the Linux kernel via standard POSIX terminal interfaces.
 
-## Tech Stack
-- C
-- POSIX (termios, unistd)
-- ANSI escape sequences
+## Technical Scope
+- **Language:** C (C99 standard)
+- **Dependencies:** None (Standard C Library & POSIX only)
+- **Core Concepts:**
+  - **Terminal Manipulation:** Transitioning from canonical mode to raw mode using `termios` structs.
+  - **Input Handling:** Processing individual byte streams and escape sequences.
+  - **Memory Management:** Manual allocation for row/buffer structures.
 
-## Status
- In progress
+## Implementation Details
+The editor modifies terminal attributes (`c_lflag`, `c_iflag`) to disable default processing (echo, canonical mode, signal shortcuts). It ensures the terminal state is restored upon program exit using `atexit()` handlers to prevent shell corruption.
+
+## Acknowledgement
+This project is based on the [Build Your Own Text Editor](https://viewsourcecode.org/snaptoken/kilo/) guide by **antirez**. The code logic follows the tutorial but has been refactored and commented to reinforce my understanding of the underlying system calls.
