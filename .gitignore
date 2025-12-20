@@ -1,0 +1,10 @@
+# Compiled binaries
+*.out
+*.o
+mini-vim
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
