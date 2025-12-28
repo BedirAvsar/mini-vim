@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c99 -Iinclude
 
 TARGET = mini-vim
-SRC = src/main.c src/editor.c src/input.c
+SRC = src/main.c src/editor.c src/input.c src/buffer.c
 
 all:
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)

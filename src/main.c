@@ -20,7 +20,7 @@ int main(void) {
         editorRefreshScreen();
         int key = editorReadKey(); // Wait for a key press
 
-        if (key == CTRL_KEY('q')){
+        if (key == CTRL_KEY('x')){
             break;
         }
         

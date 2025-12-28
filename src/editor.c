@@ -1,60 +1,62 @@
 // Project File
 #include "editor.h"
 #include "input.h"
+#include "buffer.h"
 
-// System librarys
+// System libraries
 #include <stdlib.h>
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <string.h>
 
-/* Store terminal settings before the editor started,
-   Store it so that it can only be accessed within editor.c
-   If my value was global, it would be bad both in terms of security and architecture */
+/*
+ * Store terminal settings before the editor started
+ * Editör başlamadan önceki terminal ayarlarını saklar
+ */
 static struct termios orig_termios;
 
-// Editor state
-// Editör durumu
-static int cx = 0;  // Cursor x position (column)
-static int cy = 0;  // Cursor y position (row)
+/*
+ * Global editor state
+ * Global editör durumu
+ */
+struct editorState E;
 
+// Print error and exit
+// Hata yazdırır ve programdan çıkar
 static void die(const char *s) {
     perror(s);
     exit(1);
 }
 
+// Restore terminal to original state
+// Terminali eski haline döndürür
 static void disableRawMode(void) {
-    // Restore terminal behavior
-    // Terminal davranışını geri alır
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1) {
         die("tcsetattr");
     }
 }
 
-/*  ECHO: It prints the text to the screen
-    ICANON: Waits for the ENTER KEY
-    ISIG: Sends a signal
-    IEXTEN: Extended input processing (Ctrl+V, etc.) */
+// Enable raw mode
+// Terminali raw mode'a alır
 static void enableRawMode(void) {
     struct termios raw = orig_termios;
-    // Disable local flags
-    // Yerel terminal davranışlarını kapat
+
+    // Local flags
     raw.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
 
-    // Disable the IXON and ICRNL bits 
-    // IXON ve ICRNL bitlerini kapat
+    // Input flags
     raw.c_iflag &= ~(IXON | ICRNL);
 
-    // Disable the OPOST bits
-    // OPOST bitlerini kapat
+    // Output flags
     raw.c_oflag &= ~(OPOST);
 
-    // Enable the CS8 bit
-    // CS8 bitini aç
+    // Control flags
     raw.c_cflag |= CS8;
 
-    // TIME SETTINGS
-    raw.c_cc[VMIN] = 0;
+    // Read timeout
+    raw.c_cc[VMIN]  = 0;
     raw.c_cc[VTIME] = 1;
 
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
@@ -62,43 +64,84 @@ static void enableRawMode(void) {
     }
 }
 
-void editorInit(void)
-{
-    // Save the current terminal attributes
-    // Mevcut terminal ayarlarını kaydeder
+// Get terminal window size
+// Terminal pencere boyutunu alır
+static int getWindowSize(int *rows, int *cols) {
+    struct winsize ws;
+
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1) {
+        return -1;
+    }
+
+    *rows = ws.ws_row;
+    *cols = ws.ws_col;
+    return 0;
+}
+
+// Initialize editor
+// Editörü başlatır
+void editorInit(void) {
+    // Initialize cursor position
+    // İmleci (0,0) konumuna al
+    E.cx = 0;
+    E.cy = 0;
+
+    // Get terminal size
+    // Terminal boyutlarını al
+    if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
+        die("getWindowSize");
+    }
+
+    // Save terminal state
+    // Terminal ayarlarını kaydet
     if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) {
         die("tcgetattr");
     }
+
+    bufferInit();
+    bufferAppendRow("Mini-Vim", 8);
+    bufferAppendRow("Type something...", 17);
+
     atexit(disableRawMode);
     enableRawMode();
 }
-    // Refresh code
+
+// Refresh the entire screen
+// Tüm ekranı yeniden çizer
 void editorRefreshScreen(void) {
+    // Clear screen
     write(STDOUT_FILENO, "\x1b[2J", 4);
+
+    // Cursor to top-left
     write(STDOUT_FILENO, "\x1b[H", 3);
 
-    for(int i = 0; i < 9; i++) {
-        write(STDOUT_FILENO,"~\r\n", 3);
-    }
+    // Draw rows
+    bufferDrawRows();
+
+    // Position cursor
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", cy + 1, cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
     write(STDOUT_FILENO, buf, strlen(buf));
 }
 
-// Key Processing 
+// Process a single keypress
+// Bir tuş basımını işler
 void editorProcessKeypress(int key) {
     switch (key) {
         case ARROW_UP:
-            if (cy > 0) cy--;
+            if (E.cy > 0) E.cy--;
             break;
+
         case ARROW_DOWN:
-            cy++;
+            if (E.cy < E.screenrows - 1) E.cy++;
             break;
+
         case ARROW_LEFT:
-            if (cx > 0) cx--;
+            if (E.cx > 0) E.cx--;
             break;
+
         case ARROW_RIGHT:
-            cx++;
+            if (E.cx < E.screencols - 1) E.cx++;
             break;
     }
 }
