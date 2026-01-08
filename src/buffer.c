@@ -1,60 +1,139 @@
-// Local Files
 #include "buffer.h"
 #include "editor.h"
 
-// System Library
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdio.h>
 
-// Text Buffer
-// Editördeki satırlar
-static erow *row = NULL;
-static int numrows = 0;
+erow *row = NULL;
+int numrows = 0;
 
-// Initialize buffer
-// Buffer sıfırlanır
 void bufferInit(void) {
     row = NULL;
     numrows = 0;
 }
 
-// Append a new row to the buffer
-// Buffer'a yeni satır ekler
+void bufferFree(void) {
+    for (int i = 0; i < numrows; i++) {
+        free(row[i].chars);
+        free(row[i].render);
+    }
+    free(row);
+}
+
+static void editorUpdateRow(erow *row) {
+    free(row->render);
+    row->render = malloc(row->size + 1);
+    if (!row->render) return;
+    
+    memcpy(row->render, row->chars, row->size);
+    row->render[row->size] = '\0';
+    row->rsize = row->size;
+}
+
 void bufferAppendRow(const char *s, int len) {
     row = realloc(row, sizeof(erow) * (numrows + 1));
+    if (!row) return;
 
-    row[numrows].size = len;
-    row[numrows].chars = malloc(len + 1);
+    erow *r = &row[numrows];
+    r->size = len;
+    r->chars = malloc(len + 1);
+    if (!r->chars) return;
 
-    memcpy(row[numrows].chars, s, len);
-    row[numrows].chars[len] = '\0';
+    memcpy(r->chars, s, len);
+    r->chars[len] = '\0';
+    
+    r->render = NULL;
+    r->rsize = 0;
+    editorUpdateRow(r);
 
     numrows++;
 }
 
-// Draw buffer rows
-// Buffer satırlarını ekrana çizer
 void bufferDrawRows(void) {
+    char buf[4096];
+    int buflen = 0;
+    
     for (int y = 0; y < E.screenrows; y++) {
-        if (y >= numrows) {
-            write(STDOUT_FILENO, "~\r\n", 3);
+        int filerow = y + E.rowoff;
+        if (filerow >= numrows) {
+            buflen += snprintf(buf + buflen, sizeof(buf) - buflen, "~");
         } else {
-            write(STDOUT_FILENO, row[y].chars, row[y].size);
-            write(STDOUT_FILENO, "\r\n", 2);
+            int len = row[filerow].rsize - E.coloff;
+            if (len < 0) len = 0;
+            if (len > E.screencols) len = E.screencols;
+            if (len > 0) {
+                buflen += snprintf(buf + buflen, sizeof(buf) - buflen, "%.*s", len, &row[filerow].render[E.coloff]);
+            }
+        }
+        
+        buflen += snprintf(buf + buflen, sizeof(buf) - buflen, "\x1b[K");
+        if (y < E.screenrows - 1) {
+            buflen += snprintf(buf + buflen, sizeof(buf) - buflen, "\r\n");
         }
     }
+    
+    write(STDOUT_FILENO, buf, buflen);
 }
 
 void bufferInsertChar(int c) {
-    if (numrows == 0) {
+    if (E.cy == numrows) {
         bufferAppendRow("", 0);
     }
 
-    erow *r = &row[0];
+    erow *r = &row[E.cy];
+
+    if (E.cx < 0 || E.cx > r->size) {
+        E.cx = r->size;
+    }
 
     r->chars = realloc(r->chars, r->size + 2);
-    r->chars[r->size] = c;
+    if (!r->chars) return;
+
+    memmove(&r->chars[E.cx + 1], &r->chars[E.cx], r->size - E.cx + 1);
     r->size++;
-    r->chars[r->size] = '\0';
+    r->chars[E.cx] = c;
+    editorUpdateRow(r);
+    E.cx++;
+}
+
+void bufferInsertNewline(void) {
+    if (E.cx == 0) {
+        bufferAppendRow("", 0);
+        for (int i = numrows - 1; i > E.cy; i--) {
+            row[i] = row[i - 1];
+        }
+        row[E.cy].size = 0;
+        row[E.cy].chars = malloc(1);
+        row[E.cy].chars[0] = '\0';
+        editorUpdateRow(&row[E.cy]);
+    } else {
+        erow *r = &row[E.cy];
+        bufferAppendRow(&r->chars[E.cx], r->size - E.cx);
+        
+        for (int i = numrows - 1; i > E.cy + 1; i--) {
+            row[i] = row[i - 1];
+        }
+        
+        r = &row[E.cy];
+        r->size = E.cx;
+        r->chars[r->size] = '\0';
+        editorUpdateRow(r);
+    }
+    E.cy++;
+    E.cx = 0;
+}
+
+void bufferDelChar(void) {
+    if (E.cy == numrows) return;
+    if (E.cx == 0 && E.cy == 0) return;
+    
+    erow *r = &row[E.cy];
+    if (E.cx > 0) {
+        memmove(&r->chars[E.cx - 1], &r->chars[E.cx], r->size - E.cx + 1);
+        r->size--;
+        editorUpdateRow(r);
+        E.cx--;
+    }
 }
